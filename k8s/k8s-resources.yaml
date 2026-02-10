@@ -1,0 +1,130 @@
+---
+# Kubernetes Resources - Hello App Deployment with HPA
+# Este arquivo contém todos os recursos necessários para deploy
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hello-app
+  labels:
+    name: hello-app
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-app
+  namespace: hello-app
+  labels:
+    app: hello-app
+    version: v2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hello-app
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: hello-app
+        version: v2
+    spec:
+      containers:
+        - name: hello-app
+          image: hello-app:v2
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 2
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello-app
+  namespace: hello-app
+  labels:
+    app: hello-app
+spec:
+  type: LoadBalancer
+  selector:
+    app: hello-app
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+  sessionAffinity: None
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: hello-app
+  namespace: hello-app
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: hello-app
+  minReplicas: 1
+  maxReplicas: 11
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 50
+          periodSeconds: 15
+        - type: Pods
+          value: 2
+          periodSeconds: 15
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 50
+          periodSeconds: 60
